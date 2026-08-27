@@ -8,13 +8,17 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "devstash",
-  description: "devstash",
+  title: "DevStash",
+  description: "A unified hub for developer knowledge & resources",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`dark ${geistSans.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
