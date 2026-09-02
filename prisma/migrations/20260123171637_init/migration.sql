@@ -136,16 +136,10 @@ CREATE UNIQUE INDEX "users_stripeCustomerId_key" ON "users"("stripeCustomerId");
 CREATE UNIQUE INDEX "users_stripeSubscriptionId_key" ON "users"("stripeSubscriptionId");
 
 -- CreateIndex
-CREATE INDEX "accounts_userId_idx" ON "accounts"("userId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "accounts_provider_providerAccountId_key" ON "accounts"("provider", "providerAccountId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "sessions_sessionToken_key" ON "sessions"("sessionToken");
-
--- CreateIndex
-CREATE INDEX "sessions_userId_idx" ON "sessions"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "verification_tokens_token_key" ON "verification_tokens"("token");
@@ -163,25 +157,10 @@ CREATE INDEX "items_itemTypeId_idx" ON "items"("itemTypeId");
 CREATE INDEX "items_createdAt_idx" ON "items"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "items_userId_isPinned_idx" ON "items"("userId", "isPinned");
-
--- CreateIndex
-CREATE INDEX "items_userId_isFavorite_idx" ON "items"("userId", "isFavorite");
-
--- CreateIndex
-CREATE INDEX "item_types_userId_idx" ON "item_types"("userId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "item_types_name_userId_key" ON "item_types"("name", "userId");
 
 -- CreateIndex
 CREATE INDEX "collections_userId_idx" ON "collections"("userId");
-
--- CreateIndex
-CREATE INDEX "collections_defaultTypeId_idx" ON "collections"("defaultTypeId");
-
--- CreateIndex
-CREATE INDEX "item_collections_collectionId_idx" ON "item_collections"("collectionId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "tags_name_key" ON "tags"("name");

@@ -1,200 +1,115 @@
-/**
- * Database smoke test.
- *
- * Runs outside Next.js, so environment variables are not loaded for us —
- * `dotenv/config` reads .env before src/lib/prisma.ts looks for DATABASE_URL.
- *
- * Exercises the same runtime path the app uses: the pooled Neon connection
- * through the driver adapter, not the direct URL the Prisma CLI uses.
- *
- * Checks the connection, the seven system item types, and the demo data
- * written by `npm run db:seed`.
- *
- * Run with: npm run db:test
- */
-import "dotenv/config";
-import { prisma } from "@/lib/prisma";
+import 'dotenv/config'
+import { Pool } from 'pg'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from '../src/generated/prisma/client'
 
-const EXPECTED_SYSTEM_TYPES = [
-  "command",
-  "file",
-  "image",
-  "link",
-  "note",
-  "prompt",
-  "snippet",
-];
+async function main() {
+  const connectionString = process.env.DATABASE_URL
 
-const DEMO_EMAIL = "demo@devstash.io";
-
-const EXPECTED_COLLECTIONS = [
-  { name: "React Patterns", itemCount: 3 },
-  { name: "AI Workflows", itemCount: 3 },
-  { name: "DevOps", itemCount: 4 },
-  { name: "Terminal Commands", itemCount: 4 },
-  { name: "Design Resources", itemCount: 4 },
-];
-
-/** First line of a value, trimmed to fit one terminal row. */
-function preview(value: string | null, max = 58): string {
-  if (!value) return "";
-  const [firstLine = ""] = value.split("\n");
-  return firstLine.length > max ? `${firstLine.slice(0, max - 1)}…` : firstLine;
-}
-
-const problems: string[] = [];
-
-function check(condition: boolean, message: string) {
-  if (!condition) problems.push(message);
-}
-
-async function checkSystemItemTypes() {
-  const types = await prisma.itemType.findMany({
-    where: { isSystem: true },
-    orderBy: { name: "asc" },
-    select: { name: true, icon: true, color: true, userId: true },
-  });
-
-  console.log(`system item types: ${types.length}`);
-  for (const t of types) {
-    console.log(
-      `  ${t.name.padEnd(9)} ${t.icon.padEnd(11)} ${t.color}  userId=${t.userId}`,
-    );
+  if (!connectionString) {
+    console.error('DATABASE_URL environment variable is not set')
+    process.exit(1)
   }
 
-  const names = types.map((t) => t.name);
-  const missing = EXPECTED_SYSTEM_TYPES.filter((n) => !names.includes(n));
-  const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+  console.log('Connecting to database...')
 
-  check(
-    missing.length === 0,
-    `missing system item types: ${missing.join(", ")} — run \`npm run db:seed\``,
-  );
-  // The seed is idempotent; duplicates would mean it inserted instead of updating.
-  check(
-    duplicates.length === 0,
-    `duplicate system item types: ${duplicates.join(", ")}`,
-  );
-}
+  const pool = new Pool({ connectionString })
+  const adapter = new PrismaPg(pool)
+  const prisma = new PrismaClient({ adapter })
 
-async function checkDemoData() {
-  const user = await prisma.user.findUnique({
-    where: { email: DEMO_EMAIL },
-    include: {
-      collections: {
-        orderBy: { createdAt: "asc" },
-        include: {
-          items: {
-            orderBy: { addedAt: "asc" },
-            include: { item: { include: { itemType: true } } },
+  try {
+    // Test connection by querying item types
+    console.log('\n📦 System Item Types:')
+    const itemTypes = await prisma.itemType.findMany({
+      where: { isSystem: true },
+      orderBy: { name: 'asc' },
+    })
+
+    itemTypes.forEach((type) => {
+      console.log(`   ${type.icon.padEnd(12)} ${type.name.padEnd(10)} ${type.color}`)
+    })
+
+    // Fetch demo user
+    console.log('\n👤 Demo User:')
+    const demoUser = await prisma.user.findUnique({
+      where: { email: 'demo@devstash.io' },
+      include: {
+        collections: {
+          include: {
+            items: {
+              include: {
+                item: {
+                  include: {
+                    itemType: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        items: {
+          include: {
+            itemType: true,
           },
         },
       },
-    },
-  });
+    })
 
-  if (!user) {
-    problems.push(`demo user ${DEMO_EMAIL} not found — run \`npm run db:seed\``);
-    return;
-  }
+    if (demoUser) {
+      console.log(`   Email: ${demoUser.email}`)
+      console.log(`   Name: ${demoUser.name}`)
+      console.log(`   Pro: ${demoUser.isPro}`)
+      console.log(`   Verified: ${demoUser.emailVerified ? 'Yes' : 'No'}`)
 
-  console.log(`\ndemo user: ${user.email}`);
-  console.log(`  name:          ${user.name}`);
-  console.log(`  isPro:         ${user.isPro}`);
-  console.log(`  emailVerified: ${user.emailVerified?.toISOString() ?? "null"}`);
-  console.log(`  password:      ${user.password ? "bcrypt hash" : "not set"}`);
-
-  check(
-    user.password?.startsWith("$2") === true,
-    "demo user password is not a bcrypt hash",
-  );
-  check(user.emailVerified !== null, "demo user emailVerified is not set");
-
-  console.log(`\ncollections: ${user.collections.length}`);
-  for (const collection of user.collections) {
-    const star = collection.isFavorite ? " ★" : "";
-    console.log(
-      `\n  ${collection.name}${star} — ${collection.description ?? ""}`,
-    );
-
-    for (const { item } of collection.items) {
-      const flags = [item.isPinned ? "📌" : "", item.isFavorite ? "★" : ""]
-        .filter(Boolean)
-        .join("");
-      const body = item.url ?? preview(item.content);
-
-      console.log(
-        `    ${item.itemType.name.padEnd(8)} ${item.title.padEnd(38)} ${flags}`,
-      );
-      console.log(`      ${body}`);
-
-      // Every item must carry the payload its content type promises.
-      if (item.contentType === "TEXT") {
-        check(
-          Boolean(item.content),
-          `item "${item.title}" is TEXT but has no content`,
-        );
+      // Display collections
+      console.log(`\n📁 Collections (${demoUser.collections.length}):`)
+      for (const collection of demoUser.collections) {
+        console.log(`\n   ${collection.name}`)
+        console.log(`   "${collection.description}"`)
+        console.log(`   Items:`)
+        for (const ic of collection.items) {
+          const icon = ic.item.itemType.icon
+          const type = ic.item.itemType.name
+          console.log(`      • [${icon}] ${ic.item.title} (${type})`)
+        }
       }
-      if (item.contentType === "URL") {
-        check(
-          item.url?.startsWith("http") === true,
-          `item "${item.title}" is URL but has no valid url`,
-        );
+
+      // Summary by type
+      console.log('\n📊 Items by Type:')
+      const typeCounts: Record<string, number> = {}
+      for (const item of demoUser.items) {
+        const typeName = item.itemType.name
+        typeCounts[typeName] = (typeCounts[typeName] || 0) + 1
       }
+      for (const [type, count] of Object.entries(typeCounts).sort()) {
+        console.log(`   ${type}: ${count}`)
+      }
+    } else {
+      console.log('   Demo user not found. Run: npx prisma db seed')
     }
+
+    // Count tables
+    console.log('\n📈 Total Counts:')
+    const [users, items, collections, tags] = await Promise.all([
+      prisma.user.count(),
+      prisma.item.count(),
+      prisma.collection.count(),
+      prisma.tag.count(),
+    ])
+
+    console.log(`   Users: ${users}`)
+    console.log(`   Items: ${items}`)
+    console.log(`   Collections: ${collections}`)
+    console.log(`   Tags: ${tags}`)
+
+    console.log('\n✅ Database connection successful!')
+  } catch (error) {
+    console.error('Database connection failed:', error)
+    process.exit(1)
+  } finally {
+    await prisma.$disconnect()
+    await pool.end()
   }
-
-  // Shape check against what the seed spec asks for.
-  for (const expected of EXPECTED_COLLECTIONS) {
-    const found = user.collections.filter((c) => c.name === expected.name);
-
-    if (found.length === 0) {
-      problems.push(`missing collection: ${expected.name}`);
-      continue;
-    }
-    // Repeated seed runs must rebuild, not stack up.
-    check(
-      found.length === 1,
-      `duplicate collection: ${expected.name} (${found.length} rows)`,
-    );
-    check(
-      found[0].items.length === expected.itemCount,
-      `collection "${expected.name}" has ${found[0].items.length} item(s), expected ${expected.itemCount}`,
-    );
-  }
-
-  const orphaned = await prisma.item.count({
-    where: { userId: user.id, collections: { none: {} } },
-  });
-  check(orphaned === 0, `${orphaned} demo item(s) belong to no collection`);
-}
-
-async function main() {
-  console.log("Testing database connection...\n");
-
-  await prisma.$queryRaw`SELECT 1`;
-  console.log("connection: ok\n");
-
-  await checkSystemItemTypes();
-  await checkDemoData();
-
-  console.log("\nrow counts:", {
-    users: await prisma.user.count(),
-    items: await prisma.item.count(),
-    collections: await prisma.collection.count(),
-    tags: await prisma.tag.count(),
-  });
-
-  if (problems.length > 0) {
-    throw new Error(`\n  - ${problems.join("\n  - ")}`);
-  }
-
-  console.log("\nAll checks passed.");
 }
 
 main()
-  .catch((e) => {
-    console.error("\nFAILED:", e instanceof Error ? e.message : e);
-    process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());

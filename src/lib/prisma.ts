@@ -1,28 +1,26 @@
-import { PrismaNeon } from "@prisma/adapter-neon";
-import { PrismaClient } from "@/generated/prisma/client";
+import { Pool } from 'pg'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from '@/generated/prisma/client'
 
-// Prisma 7 has no built-in connection handling — the driver adapter owns it.
-// The app uses Neon's POOLED url (DATABASE_URL); the CLI uses the direct one.
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set. Copy .env.example to .env.");
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
 }
 
-const createPrismaClient = () =>
-  new PrismaClient({
-    adapter: new PrismaNeon({ connectionString }),
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  });
+function createPrismaClient() {
+  const connectionString = process.env.DATABASE_URL
 
-// Next.js dev server hot-reloads modules, which would otherwise open a new pool
-// on every reload until the database refuses connections.
-const globalForPrisma = globalThis as unknown as {
-  prisma: ReturnType<typeof createPrismaClient> | undefined;
-};
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is not set')
+  }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+  const pool = new Pool({ connectionString })
+  const adapter = new PrismaPg(pool)
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  return new PrismaClient({ adapter })
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma
 }
