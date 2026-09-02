@@ -1,14 +1,11 @@
-"use client";
-
 import Link from "next/link";
 import CollectionCard from "./collection-card";
-import { mockCollections } from "@/lib/mock-data";
+import { getRecentCollections } from "@/lib/db/collections";
+import { getCurrentUser } from "@/lib/db/user";
 
-export default function CollectionsSection() {
-  // Show up to 6 recent collections sorted by updatedAt
-  const recentCollections = [...mockCollections]
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-    .slice(0, 6);
+export default async function CollectionsSection() {
+  const user = await getCurrentUser();
+  const recentCollections = user ? await getRecentCollections(user.id, 6) : [];
 
   return (
     <section>
@@ -21,11 +18,17 @@ export default function CollectionsSection() {
           View all
         </Link>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {recentCollections.map((collection) => (
-          <CollectionCard key={collection.id} collection={collection} />
-        ))}
-      </div>
+      {recentCollections.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No collections yet. Create one to get started.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {recentCollections.map((collection) => (
+            <CollectionCard key={collection.id} collection={collection} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
